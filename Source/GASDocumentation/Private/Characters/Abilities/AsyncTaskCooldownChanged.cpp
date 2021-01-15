@@ -2,6 +2,7 @@
 
 
 #include "Characters/Abilities/AsyncTaskCooldownChanged.h"
+#include "Characters/Abilities/GDAbilitySystemComponent.h"
 
 UAsyncTaskCooldownChanged * UAsyncTaskCooldownChanged::ListenForCooldownChange(UAbilitySystemComponent * AbilitySystemComponent, FGameplayTagContainer InCooldownTags, bool InUseServerCooldown)
 {
@@ -24,6 +25,15 @@ UAsyncTaskCooldownChanged * UAsyncTaskCooldownChanged::ListenForCooldownChange(U
 	for (FGameplayTag CooldownTag : CooldownTagArray)
 	{
 		AbilitySystemComponent->RegisterGameplayTagEvent(CooldownTag, EGameplayTagEventType::NewOrRemoved).AddUObject(ListenForCooldownChange, &UAsyncTaskCooldownChanged::CooldownTagChanged);
+	}
+
+
+	
+
+	UGDAbilitySystemComponent* GDASC = Cast<UGDAbilitySystemComponent>(AbilitySystemComponent);
+	if (GDASC)
+	{
+		GDASC->onGameplayEffectDurationChangeDelegate.AddUObject(ListenForCooldownChange, &UAsyncTaskCooldownChanged::CooldownDurationChanged);
 	}
 
 	return ListenForCooldownChange;
@@ -100,6 +110,38 @@ void UAsyncTaskCooldownChanged::CooldownTagChanged(const FGameplayTag CooldownTa
 	{
 		OnCooldownEnd.Broadcast(CooldownTag, -1.0f, -1.0f);
 	}
+}
+
+void UAsyncTaskCooldownChanged::CooldownDurationChanged(struct FActiveGameplayEffect& age, float durtion)
+{
+
+	const FGameplayEffectSpec & SpecApplied = age.Spec;
+
+	FGameplayTagContainer AssetTags;
+	SpecApplied.GetAllAssetTags(AssetTags);
+
+	FGameplayTagContainer GrantedTags;
+	SpecApplied.GetAllGrantedTags(GrantedTags);
+
+	TArray<FGameplayTag> CooldownTagArray;
+	CooldownTags.GetGameplayTagArray(CooldownTagArray);
+
+
+	for (FGameplayTag CooldownTag : CooldownTagArray) {
+
+		if (AssetTags.HasTagExact(CooldownTag) || GrantedTags.HasTagExact(CooldownTag))
+		{
+
+			float TimeRemaining = 0.0f;
+			float Duration = 0.0f;
+			// Expecting cooldown tag to always be first tag
+			FGameplayTagContainer CooldownTagContainer(GrantedTags.GetByIndex(0));
+			GetCooldownRemainingForTag(CooldownTagContainer, TimeRemaining, Duration);
+
+			OnCooldownBegin.Broadcast(CooldownTag, TimeRemaining, Duration);
+		}
+	}
+
 }
 
 bool UAsyncTaskCooldownChanged::GetCooldownRemainingForTag(FGameplayTagContainer InCooldownTags, float & TimeRemaining, float & CooldownDuration)
